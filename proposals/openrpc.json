@@ -17,13 +17,50 @@
             "paramStructure": "by-name",
             "params": [
                 {
-                    "name": "event",
-                    "summary": "The name of the event to subscribe to. See Events for a full listing.",
+                    "name": "events",
+                    "summary": "The names of the events to subscribe to. See Events for a full listing.",
                     "required": true,
-                    "schema": { "type": "string" }
+                    "schema": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    }
+                },
+                {
+                    "name": "contexts",
+                    "summary": "Optional list of browsing context IDs to subscribe to events for.",
+                    "required": false,
+                    "schema": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    }
+                },
+                {
+                    "name": "userContexts",
+                    "summary": "Optional list of user context IDs to subscribe to events for.",
+                    "required": false,
+                    "schema": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    }
+                },
+                {
+                    "name": "filters",
+                    "summary": "Optional filters for fine-grained event filtering.",
+                    "required": false,
+                    "schema": { "$ref": "#/components/schemas/EventFilters" }
                 }
             ],
-            "result": { "$ref": "#/components/contentDescriptors/NullResult" }
+            "result": {
+                "name": "SubscribeResult",
+                "required": true,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "subscription": { "type": "string" }
+                    },
+                    "required": ["subscription"]
+                }
+            }
         },
         {
             "name": "unsubscribe",
@@ -39,6 +76,61 @@
                 }
             ],
             "result": { "$ref": "#/components/contentDescriptors/NullResult" }
+        },
+        {
+            "name": "session.setPerformanceMonitoring",
+            "tags": [{ "$ref": "#/components/tags/Command" }],
+            "summary": "Enable or disable performance monitoring for the session.",
+            "paramStructure": "by-name",
+            "params": [
+                {
+                    "name": "enabled",
+                    "summary": "Whether to enable performance monitoring.",
+                    "required": true,
+                    "schema": { "type": "boolean" }
+                },
+                {
+                    "name": "metrics",
+                    "summary": "Optional list of metrics to monitor. If not specified, all available metrics are monitored. Supported metrics include: 'pageLoad', 'resourceUsage', 'memory', 'cpu', 'network'.",
+                    "required": false,
+                    "schema": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    }
+                },
+                {
+                    "name": "samplingInterval",
+                    "summary": "Optional sampling interval in milliseconds. Default is 1000ms.",
+                    "required": false,
+                    "schema": { "type": "integer", "minimum": 1 }
+                }
+            ],
+            "result": { "$ref": "#/components/contentDescriptors/NullResult" }
+        },
+        {
+            "name": "session.getResourceUsage",
+            "tags": [{ "$ref": "#/components/tags/Command" }],
+            "summary": "Retrieve resource usage data for browsing contexts.",
+            "paramStructure": "by-name",
+            "params": [
+                {
+                    "name": "context",
+                    "summary": "Optional browsing context ID. If not specified, returns data for all contexts.",
+                    "required": false,
+                    "schema": { "$ref": "#/components/schemas/BrowsingContextId" }
+                },
+                {
+                    "name": "timeRange",
+                    "summary": "Optional time range for which to retrieve data. If not specified, returns all available data.",
+                    "required": false,
+                    "schema": { "$ref": "#/components/schemas/TimeRange" }
+                }
+            ],
+            "result": {
+                "name": "GetResourceUsageResult",
+                "required": true,
+                "schema": { "$ref": "#/components/schemas/GetResourceUsageResult" }
+            }
         },
         {
             "name": "closeSession",
@@ -1475,6 +1567,127 @@
                 }
             ],
             "result": { "$ref": "#/components/contentDescriptors/NullResult" }
+        },
+        {
+            "name": "script.runtimeError",
+            "tags": [{ "$ref": "#/components/tags/Event" }],
+            "summary": "Fired when an uncaught exception occurs during script execution.",
+            "paramStructure": "by-name",
+            "params": [
+                {
+                    "name": "realm",
+                    "summary": "The realm ID where the error occurred.",
+                    "required": true,
+                    "schema": { "type": "string" }
+                },
+                {
+                    "name": "error",
+                    "summary": "The serialized error object.",
+                    "required": true,
+                    "schema": { "$ref": "#/components/schemas/JavaScriptValue" }
+                },
+                {
+                    "name": "stackTrace",
+                    "summary": "Array of stack trace frames.",
+                    "required": true,
+                    "schema": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/StackTraceFrame" }
+                    }
+                },
+                {
+                    "name": "timestamp",
+                    "summary": "Timestamp when the error occurred (Unix timestamp in milliseconds).",
+                    "required": true,
+                    "schema": { "type": "integer" }
+                },
+                {
+                    "name": "source",
+                    "summary": "Source information about where the error occurred.",
+                    "required": true,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "realm": { "type": "string" },
+                            "context": { "type": "string" }
+                        },
+                        "required": ["realm"]
+                    }
+                }
+            ],
+            "result": { "$ref": "#/components/contentDescriptors/NullResult" }
+        },
+        {
+            "name": "performance.pageLoadMetrics",
+            "tags": [{ "$ref": "#/components/tags/Event" }],
+            "summary": "Fired when page load metrics are available for a navigation.",
+            "paramStructure": "by-name",
+            "params": [
+                {
+                    "name": "context",
+                    "summary": "The browsing context ID.",
+                    "required": true,
+                    "schema": { "$ref": "#/components/schemas/BrowsingContextId" }
+                },
+                {
+                    "name": "navigationId",
+                    "summary": "The navigation ID associated with these metrics.",
+                    "required": true,
+                    "schema": { "type": "string" }
+                },
+                {
+                    "name": "metrics",
+                    "summary": "The page load metrics data.",
+                    "required": true,
+                    "schema": { "$ref": "#/components/schemas/PageLoadMetricsData" }
+                },
+                {
+                    "name": "timestamp",
+                    "summary": "Timestamp when the metrics were collected (Unix timestamp in milliseconds).",
+                    "required": true,
+                    "schema": { "type": "integer" }
+                }
+            ],
+            "result": { "$ref": "#/components/contentDescriptors/NullResult" }
+        },
+        {
+            "name": "performance.resourceUsage",
+            "tags": [{ "$ref": "#/components/tags/Event" }],
+            "summary": "Fired periodically when performance monitoring is enabled, providing resource usage data for a browsing context.",
+            "paramStructure": "by-name",
+            "params": [
+                {
+                    "name": "context",
+                    "summary": "The browsing context ID.",
+                    "required": true,
+                    "schema": { "$ref": "#/components/schemas/BrowsingContextId" }
+                },
+                {
+                    "name": "cpuTime",
+                    "summary": "CPU time used in milliseconds.",
+                    "required": true,
+                    "schema": { "type": "integer" }
+                },
+                {
+                    "name": "memoryUsage",
+                    "summary": "Memory usage in bytes.",
+                    "required": true,
+                    "schema": { "type": "integer" }
+                },
+                {
+                    "name": "networkBytes",
+                    "summary": "Network bytes transferred.",
+                    "required": true,
+                    "schema": { "type": "integer" }
+                },
+                {
+                    "name": "timestamp",
+                    "summary": "Timestamp when the data was collected (Unix timestamp in milliseconds).",
+                    "required": true,
+                    "schema": { "type": "integer" }
+                }
+            ],
+            "result": { "$ref": "#/components/contentDescriptors/NullResult" }
         }
     ],
     "components": {
@@ -1648,6 +1861,124 @@
                     "height": { "type": "integer" }
                 },
                 "required": ["x", "y", "width", "height"]
+            },
+            "EventFilters": {
+                "title": "EventFilters",
+                "type": "object",
+                "properties": {
+                    "urlPattern": {
+                        "type": "string",
+                        "description": "URL pattern (supports wildcards) to filter events by URL"
+                    },
+                    "eventType": {
+                        "type": "string",
+                        "description": "Specific event type to filter (e.g., 'click', 'error')"
+                    },
+                    "elementSelector": {
+                        "type": "string",
+                        "description": "CSS selector to filter events by element"
+                    }
+                }
+            },
+            "StackTraceFrame": {
+                "title": "StackTraceFrame",
+                "type": "object",
+                "properties": {
+                    "functionName": {
+                        "type": "string",
+                        "description": "Name of the function where the error occurred"
+                    },
+                    "lineNumber": {
+                        "type": "integer",
+                        "description": "Line number where the error occurred"
+                    },
+                    "columnNumber": {
+                        "type": "integer",
+                        "description": "Column number where the error occurred"
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "URL of the source file"
+                    }
+                },
+                "required": ["functionName"]
+            },
+            "TimeRange": {
+                "title": "TimeRange",
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "integer",
+                        "description": "Start timestamp (Unix timestamp in milliseconds)"
+                    },
+                    "end": {
+                        "type": "integer",
+                        "description": "End timestamp (Unix timestamp in milliseconds)"
+                    }
+                },
+                "required": ["start", "end"]
+            },
+            "ResourceUsageEntry": {
+                "title": "ResourceUsageEntry",
+                "type": "object",
+                "properties": {
+                    "context": {
+                        "$ref": "#/components/schemas/BrowsingContextId",
+                        "description": "The browsing context ID"
+                    },
+                    "timestamp": {
+                        "type": "integer",
+                        "description": "Timestamp when the data was collected (Unix timestamp in milliseconds)"
+                    },
+                    "cpuTime": {
+                        "type": "integer",
+                        "description": "CPU time used in milliseconds"
+                    },
+                    "memoryUsage": {
+                        "type": "integer",
+                        "description": "Memory usage in bytes"
+                    },
+                    "networkBytes": {
+                        "type": "integer",
+                        "description": "Network bytes transferred"
+                    }
+                },
+                "required": ["context", "timestamp", "cpuTime", "memoryUsage", "networkBytes"]
+            },
+            "GetResourceUsageResult": {
+                "title": "GetResourceUsageResult",
+                "type": "object",
+                "properties": {
+                    "resourceUsage": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/ResourceUsageEntry" },
+                        "description": "Array of resource usage entries"
+                    }
+                },
+                "required": ["resourceUsage"]
+            },
+            "PageLoadMetricsData": {
+                "title": "PageLoadMetricsData",
+                "type": "object",
+                "properties": {
+                    "domContentLoaded": {
+                        "type": "integer",
+                        "description": "Time in milliseconds from navigation start to DOMContentLoaded event"
+                    },
+                    "loadComplete": {
+                        "type": "integer",
+                        "description": "Time in milliseconds from navigation start to load event"
+                    },
+                    "firstContentfulPaint": {
+                        "type": "integer",
+                        "description": "Time in milliseconds from navigation start to first contentful paint"
+                    },
+                    "largestContentfulPaint": {
+                        "type": "integer",
+                        "description": "Time in milliseconds from navigation start to largest contentful paint"
+                    }
+                },
+                "required": ["domContentLoaded", "loadComplete", "firstContentfulPaint", "largestContentfulPaint"]
             }
         }
     }

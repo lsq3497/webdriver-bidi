@@ -525,6 +525,7 @@ EventData = (
   InputEvent //
   LogEvent //
   NetworkEvent //
+  PerformanceEvent //
   ScriptEvent
 )
 </pre>
@@ -1553,6 +1554,15 @@ A [=BiDi session=] has a
 A [=BiDi session=] has a <dfn>user context to proxy configuration map</dfn>, which is
 a [=/map=] between [=user context|user contexts=] and [=proxy configuration=].
 
+A [=BiDi session=] has a <dfn>performance monitoring enabled flag</dfn>, which is a boolean.
+It is initially false.
+
+A [=BiDi session=] has a <dfn>performance monitoring metrics</dfn>, which is a list of strings or null.
+It is initially null.
+
+A [=BiDi session=] has a <dfn>performance monitoring sampling interval</dfn>, which is a number.
+It is initially 1000.
+
 An <dfn>emulated network conditions struct</dfn> is a [=struct=] with:
 * [=struct/item=] named <dfn id="emulated-network-conditions-struct-offline"
   for="emulated-network-conditions-struct">offline</dfn> which is a boolean or null.
@@ -1640,7 +1650,9 @@ SessionCommand = (
   session.New //
   session.Status //
   session.Subscribe //
-  session.Unsubscribe
+  session.Unsubscribe //
+  session.SetPerformanceMonitoring //
+  session.GetResourceUsage
 )
 </pre>
 
@@ -1652,7 +1664,9 @@ SessionResult = (
   session.NewResult /
   session.StatusResult /
   session.SubscribeResult /
-  session.UnsubscribeResult
+  session.UnsubscribeResult /
+  session.SetPerformanceMonitoringResult /
+  session.GetResourceUsageResult
 )
 </pre>
 
@@ -1876,11 +1890,80 @@ session.SubscribeParameters = {
   events: [+text],
   ? contexts: [+browsingContext.BrowsingContext],
   ? userContexts: [+browser.UserContext],
+  ? filters: session.EventFilters,
+}
+
+session.EventFilters = {
+  ? urlPattern: text,
+  ? eventType: text,
+  ? elementSelector: text,
 }
 </pre>
 
 The <code>session.SubscribeParameters</code> type represents a request to
 subscribe to a specific set of events.
+
+The optional <code>filters</code> field allows fine-grained filtering of events:
+- <code>urlPattern</code>: A URL pattern (supports wildcards) to filter events by URL
+- <code>eventType</code>: A specific event type to filter (e.g., "<code>click</code>", "<code>error</code>")
+- <code>elementSelector</code>: A CSS selector to filter events by element
+
+#### The session.SetPerformanceMonitoringParameters Type #### {#type-session-SetPerformanceMonitoringParameters}
+
+<pre class="cddl" data-cddl-module="remote-cddl">
+session.SetPerformanceMonitoringParameters = {
+  enabled: bool,
+  ? metrics: [+text],
+  ? samplingInterval: js-uint,
+}
+</pre>
+
+The <code>session.SetPerformanceMonitoringParameters</code> type represents a request to
+enable or disable performance monitoring.
+
+- <code>enabled</code>: Whether to enable performance monitoring
+- <code>metrics</code>: Optional list of metrics to monitor. If not specified, all available metrics are monitored.
+  Supported metrics include: "<code>pageLoad</code>", "<code>resourceUsage</code>", "<code>memory</code>", "<code>cpu</code>", "<code>network</code>"
+- <code>samplingInterval</code>: Optional sampling interval in milliseconds. Default is 1000ms.
+
+#### The session.GetResourceUsageParameters Type #### {#type-session-GetResourceUsageParameters}
+
+<pre class="cddl" data-cddl-module="remote-cddl">
+session.GetResourceUsageParameters = {
+  ? context: browsingContext.BrowsingContext,
+  ? timeRange: session.TimeRange,
+}
+
+session.TimeRange = {
+  start: js-uint,
+  end: js-uint,
+}
+</pre>
+
+The <code>session.GetResourceUsageParameters</code> type represents a request to
+retrieve resource usage data.
+
+- <code>context</code>: Optional browsing context ID. If not specified, returns data for all contexts.
+- <code>timeRange</code>: Optional time range for which to retrieve data. If not specified, returns all available data.
+
+#### The session.ResourceUsageResult Type #### {#type-session-ResourceUsageResult}
+
+<pre class="cddl" data-cddl-module="local-cddl">
+session.GetResourceUsageResult = {
+  resourceUsage: [+session.ResourceUsageEntry],
+}
+
+session.ResourceUsageEntry = {
+  context: browsingContext.BrowsingContext,
+  timestamp: js-uint,
+  cpuTime: js-uint,
+  memoryUsage: js-uint,
+  networkBytes: js-uint,
+}
+</pre>
+
+The <code>session.GetResourceUsageResult</code> type represents resource usage data
+for one or more browsing contexts.
 
 #### The session.UnsubscribeByIDRequest Type #### {#type-session-UnsubscribeByIDRequest}
 
@@ -2302,6 +2385,113 @@ The [=remote end steps=] with |session| and |command parameters| are:
    1. [=list/Remove=] each item in |subscriptions to remove| from |session|'s [=subscriptions=].
 
 1. Return [=success=] with data null.
+
+</div>
+
+#### The session.setPerformanceMonitoring Command #### {#command-session-setPerformanceMonitoring}
+
+The <dfn export for=commands>session.setPerformanceMonitoring</dfn> command enables or disables
+performance monitoring for the session.
+
+<dl>
+   <dt>Command Type</dt>
+   <dd>
+      <pre class="cddl" data-cddl-module="remote-cddl">
+      session.SetPerformanceMonitoring = (
+        method: "session.setPerformanceMonitoring",
+        params: session.SetPerformanceMonitoringParameters
+      )
+      </pre>
+   </dd>
+   <dt>Return Type</dt>
+   <dd>
+      <pre class="cddl" data-cddl-module="local-cddl">
+      session.SetPerformanceMonitoringResult = EmptyResult
+      </pre>
+   </dd>
+</dl>
+
+<div algorithm="remote end steps for session.setPerformanceMonitoring">
+The [=remote end steps=] with |session| and |command parameters| are:
+
+1. Let |enabled| be |command parameters|["<code>enabled</code>"].
+
+1. Let |metrics| be |command parameters|["<code>metrics</code>"] if present, or null otherwise.
+
+1. Let |sampling interval| be |command parameters|["<code>samplingInterval</code>"] if present, or 1000 otherwise.
+
+1. Set |session|'s [=performance monitoring enabled flag=] to |enabled|.
+
+1. If |enabled| is true:
+
+   1. Set |session|'s [=performance monitoring metrics=] to |metrics|.
+
+   1. Set |session|'s [=performance monitoring sampling interval=] to |sampling interval|.
+
+   1. Start performance monitoring for |session| with |metrics| and |sampling interval|.
+
+1. Otherwise:
+
+   1. Stop performance monitoring for |session|.
+
+1. Return [=success=] with data null.
+
+</div>
+
+#### The session.getResourceUsage Command #### {#command-session-getResourceUsage}
+
+The <dfn export for=commands>session.getResourceUsage</dfn> command retrieves resource usage
+data for browsing contexts.
+
+<dl>
+   <dt>Command Type</dt>
+   <dd>
+      <pre class="cddl" data-cddl-module="remote-cddl">
+      session.GetResourceUsage = (
+        method: "session.getResourceUsage",
+        params: session.GetResourceUsageParameters
+      )
+      </pre>
+   </dd>
+   <dt>Return Type</dt>
+   <dd>
+      <pre class="cddl" data-cddl-module="local-cddl">
+      session.GetResourceUsageResult = {
+        resourceUsage: [+session.ResourceUsageEntry],
+      }
+      </pre>
+   </dd>
+</dl>
+
+<div algorithm="remote end steps for session.getResourceUsage">
+The [=remote end steps=] with |session| and |command parameters| are:
+
+1. Let |context id| be |command parameters|["<code>context</code>"] if present, or null otherwise.
+
+1. Let |time range| be |command parameters|["<code>timeRange</code>"] if present, or null otherwise.
+
+1. Let |resource usage entries| be an empty [=/list=].
+
+1. If |context id| is not null:
+
+   1. Let |navigable| be the result of [=trying=] to [=get a navigable=] with |context id|.
+
+   1. Let |entries| be the result of [=get resource usage data=] with |navigable| and |time range|.
+
+   1. [=list/Append=] each item in |entries| to |resource usage entries|.
+
+1. Otherwise:
+
+   1. For each |navigable| in all [=navigable/top-level traversables=]:
+
+      1. Let |entries| be the result of [=get resource usage data=] with |navigable| and |time range|.
+
+      1. [=list/Append=] each item in |entries| to |resource usage entries|.
+
+1. Let |body| be a [=/map=] matching the <code>session.GetResourceUsageResult</code>
+   production, with the <code>resourceUsage</code> field set to |resource usage entries|.
+
+1. Return [=success=] with data |body|.
 
 </div>
 
@@ -10552,7 +10742,8 @@ ScriptResult = (
 ScriptEvent = (
   script.Message //
   script.RealmCreated //
-  script.RealmDestroyed
+  script.RealmDestroyed //
+  script.RuntimeError
 )
 </pre>
 
@@ -13317,6 +13508,258 @@ worker=] algorithm:
 
 1. Let |body| be a [=/map=] matching the <code>script.RealmDestroyed</code>
    production, with the <code>params</code> field set to |params|.
+
+</div>
+
+#### The script.runtimeError Event #### {#event-script-runtimeError}
+
+<dl>
+   <dt>Event Type</dt>
+   <dd>
+      <pre class="cddl" data-cddl-module="local-cddl">
+        script.RuntimeError = (
+          method: "script.runtimeError",
+          params: script.RuntimeErrorParameters
+        )
+
+        script.RuntimeErrorParameters = {
+          realm: script.Realm,
+          error: script.RemoteValue,
+          stackTrace: [+script.StackTraceFrame],
+          timestamp: js-uint,
+          source: script.Source,
+        }
+
+        script.StackTraceFrame = {
+          functionName: text,
+          ? lineNumber: js-uint,
+          ? columnNumber: js-uint,
+          ? url: text,
+        }
+      </pre>
+   </dd>
+</dl>
+
+The [=remote end event trigger=] is:
+
+<div algorithm="remote end event trigger for script.runtimeError">
+
+When an uncaught exception occurs during script execution in a realm:
+
+1. Let |realm| be the realm in which the exception occurred.
+
+1. Let |environment settings| be the [=environment settings object=] whose
+   [=realm execution context=]'s Realm component is |realm|.
+
+1. Let |related navigables| be the result of [=get related navigables=] given |environment settings|.
+
+1. For each |session| in the [=set of sessions for which an event is enabled=]
+   given "<code>script.runtimeError</code>" and |related navigables|:
+
+   1. Let |error| be the exception value.
+
+   1. Let |serialization options| be a [=/map=] matching the
+      <code>script.SerializationOptions</code> production with the fields set to
+      their default values.
+
+   1. Let |serialized error| be the result of [=serialize as a remote value=]
+      given |error|, |serialization options|, "<code>none</code>", a new [=/map=]
+      as serialization internal map and |realm|.
+
+   1. Let |stack trace| be an empty list.
+
+   1. If |error| has a [[!ECMAScript]] <code>stack</code> property:
+
+      1. Parse the stack trace string to extract frame information.
+
+      1. For each frame in the stack trace:
+
+         1. Let |frame| be a [=/map=] matching the
+            <code>script.StackTraceFrame</code> production, with:
+            - <code>functionName</code> set to the function name (or "<code>&lt;anonymous&gt;</code>" if unknown)
+            - <code>lineNumber</code> set to the line number if available
+            - <code>columnNumber</code> set to the column number if available
+            - <code>url</code> set to the source URL if available
+
+         1. Append |frame| to |stack trace|.
+
+   1. Let |source| be the [=get the source=] with |realm|.
+
+   1. Let |timestamp| be the current time in milliseconds since the Unix epoch.
+
+   1. Let |params| be a [=/map=] matching the
+      <code>script.RuntimeErrorParameters</code> production, with:
+      - <code>realm</code> set to the [=realm id=] for |realm|
+      - <code>error</code> set to |serialized error|
+      - <code>stackTrace</code> set to |stack trace|
+      - <code>timestamp</code> set to |timestamp|
+      - <code>source</code> set to |source|
+
+   1. Let |body| be a [=/map=] matching the <code>script.RuntimeError</code>
+      production, with the <code>params</code> field set to |params|.
+
+   1. [=Emit an event=] with |session| and |body|.
+
+</div>
+
+## The performance Module ## {#module-performance}
+
+The <dfn export for=modules>performance</dfn> module contains events relating to
+performance metrics and resource usage.
+
+### Definition ### {#module-performance-definition}
+
+{^local end definition^}
+
+<pre class="cddl" data-cddl-module="local-cddl">
+PerformanceEvent = (
+  performance.PageLoadMetrics //
+  performance.ResourceUsage
+)
+</pre>
+
+### Types ### {#module-performance-types}
+
+#### The performance.PageLoadMetricsParameters Type #### {#type-performance-PageLoadMetricsParameters}
+
+<pre class="cddl" data-cddl-module="local-cddl">
+performance.PageLoadMetrics = (
+  method: "performance.pageLoadMetrics",
+  params: performance.PageLoadMetricsParameters
+)
+
+performance.PageLoadMetricsParameters = {
+  context: browsingContext.BrowsingContext,
+  navigationId: text,
+  metrics: performance.PageLoadMetricsData,
+  timestamp: js-uint,
+}
+
+performance.PageLoadMetricsData = {
+  domContentLoaded: js-uint,
+  loadComplete: js-uint,
+  firstContentfulPaint: js-uint,
+  largestContentfulPaint: js-uint,
+}
+</pre>
+
+The <code>performance.PageLoadMetrics</code> event is emitted when page load metrics
+are available for a navigation.
+
+- <code>context</code>: The browsing context ID
+- <code>navigationId</code>: The navigation ID associated with these metrics
+- <code>metrics</code>: The page load metrics data
+  - <code>domContentLoaded</code>: Time in milliseconds from navigation start to DOMContentLoaded event
+  - <code>loadComplete</code>: Time in milliseconds from navigation start to load event
+  - <code>firstContentfulPaint</code>: Time in milliseconds from navigation start to first contentful paint
+  - <code>largestContentfulPaint</code>: Time in milliseconds from navigation start to largest contentful paint
+- <code>timestamp</code>: Timestamp when the metrics were collected (Unix timestamp in milliseconds)
+
+#### The performance.ResourceUsageParameters Type #### {#type-performance-ResourceUsageParameters}
+
+<pre class="cddl" data-cddl-module="local-cddl">
+performance.ResourceUsage = (
+  method: "performance.resourceUsage",
+  params: performance.ResourceUsageParameters
+)
+
+performance.ResourceUsageParameters = {
+  context: browsingContext.BrowsingContext,
+  cpuTime: js-uint,
+  memoryUsage: js-uint,
+  networkBytes: js-uint,
+  timestamp: js-uint,
+}
+</pre>
+
+The <code>performance.ResourceUsage</code> event is emitted periodically when
+performance monitoring is enabled, providing resource usage data for a browsing context.
+
+- <code>context</code>: The browsing context ID
+- <code>cpuTime</code>: CPU time used in milliseconds
+- <code>memoryUsage</code>: Memory usage in bytes
+- <code>networkBytes</code>: Network bytes transferred
+- <code>timestamp</code>: Timestamp when the data was collected (Unix timestamp in milliseconds)
+
+### Events ### {#module-performance-events}
+
+#### The performance.pageLoadMetrics Event #### {#event-performance-pageLoadMetrics}
+
+<dl>
+   <dt>Event Type</dt>
+   <dd>
+      <pre class="cddl" data-cddl-module="local-cddl">
+        performance.PageLoadMetrics = (
+         method: "performance.pageLoadMetrics",
+         params: performance.PageLoadMetricsParameters
+        )
+      </pre>
+   </dd>
+</dl>
+
+<div algorithm>
+The [=remote end event trigger=] is the <dfn export>WebDriver BiDi page load metrics</dfn> steps
+given [=/navigable=] |navigable|, [=navigation id=] |navigation id|, and
+[=performance metrics data=] |metrics data|:
+
+1. If performance monitoring is not enabled for any session, return.
+
+1. Let |params| be a [=/map=] matching the
+   <code>performance.PageLoadMetricsParameters</code> production, with:
+   - <code>context</code> set to |navigable|'s [=navigable id=]
+   - <code>navigationId</code> set to |navigation id|
+   - <code>metrics</code> set to |metrics data|
+   - <code>timestamp</code> set to the current time in milliseconds since the Unix epoch
+
+1. Let |body| be a [=/map=] matching the <code>performance.PageLoadMetrics</code>
+   production, with the <code>params</code> field set to |params|.
+
+1. Let |related navigables| be a [=/set=] containing |navigable|.
+
+1. For each |session| in the [=set of sessions for which an event is enabled=]
+   given "<code>performance.pageLoadMetrics</code>" and |related navigables|:
+
+  1. [=Emit an event=] with |session| and |body|.
+
+</div>
+
+#### The performance.resourceUsage Event #### {#event-performance-resourceUsage}
+
+<dl>
+   <dt>Event Type</dt>
+   <dd>
+      <pre class="cddl" data-cddl-module="local-cddl">
+        performance.ResourceUsage = (
+         method: "performance.resourceUsage",
+         params: performance.ResourceUsageParameters
+        )
+      </pre>
+   </dd>
+</dl>
+
+<div algorithm>
+The [=remote end event trigger=] is the <dfn export>WebDriver BiDi resource usage</dfn> steps
+given [=/navigable=] |navigable| and [=resource usage data=] |resource data|:
+
+1. If performance monitoring is not enabled for any session, return.
+
+1. Let |params| be a [=/map=] matching the
+   <code>performance.ResourceUsageParameters</code> production, with:
+   - <code>context</code> set to |navigable|'s [=navigable id=]
+   - <code>cpuTime</code> set to |resource data|'s CPU time
+   - <code>memoryUsage</code> set to |resource data|'s memory usage
+   - <code>networkBytes</code> set to |resource data|'s network bytes
+   - <code>timestamp</code> set to the current time in milliseconds since the Unix epoch
+
+1. Let |body| be a [=/map=] matching the <code>performance.ResourceUsage</code>
+   production, with the <code>params</code> field set to |params|.
+
+1. Let |related navigables| be a [=/set=] containing |navigable|.
+
+1. For each |session| in the [=set of sessions for which an event is enabled=]
+   given "<code>performance.resourceUsage</code>" and |related navigables|:
+
+  1. [=Emit an event=] with |session| and |body|.
 
 </div>
 
